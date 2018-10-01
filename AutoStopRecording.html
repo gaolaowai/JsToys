@@ -1,0 +1,321 @@
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<title>Capture microphone, stopping when speaking stops (handled locally), save audio as ogg, then send to API</title>
+
+<form enctype="multipart/form-data" method="post" name="fileinfo"> <-- used as a template-->
+
+<script type="text/javascript">
+
+///////////////////////////////////////////
+
+
+////// Max Lee: Code was copied and pasted from: https://github.com/muaz-khan/WebRTC-Experiment/blob/master/hark/hark.js
+
+// original source code is taken from:
+// https://github.com/SimpleWebRTC/hark
+// copyright goes to &yet team
+// edited by Muaz Khan for RTCMultiConnection.js
+function hark(stream, options) {
+    var audioContextType = window.webkitAudioContext || window.AudioContext;
+
+    var harker = this;
+    harker.events = {};
+    harker.on = function (event, callback) {
+        harker.events[event] = callback;
+    };
+
+    harker.emit = function () {
+        if (harker.events[arguments[0]]) {
+            harker.events[arguments[0]](arguments[1], arguments[2], arguments[3], arguments[4]);
+        }
+    };
+
+    // make it not break in non-supported browsers
+    if (!audioContextType) return harker;
+
+    options = options || {};
+    // Config
+    var smoothing = (options.smoothing || 0.1),
+        interval = (options.interval || 50),
+        threshold = options.threshold,
+        play = options.play,
+        history = options.history || 10,
+        running = true;
+
+    // Setup Audio Context
+    if (!window.audioContext00) {
+        window.audioContext00 = new audioContextType();
+    }
+
+    var gainNode = audioContext00.createGain();
+    gainNode.connect(audioContext00.destination);
+    // don't play for self
+    gainNode.gain.value = 0;
+
+    var sourceNode, fftBins, analyser;
+
+    analyser = audioContext00.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = smoothing;
+    fftBins = new Float32Array(analyser.fftSize);
+
+    //WebRTC Stream
+    sourceNode = audioContext00.createMediaStreamSource(stream);
+    threshold = threshold || -50;
+
+    sourceNode.connect(analyser);
+    if (play) analyser.connect(audioContext00.destination);
+
+    harker.speaking = false;
+
+    harker.setThreshold = function (t) {
+        threshold = t;
+    };
+
+    harker.setInterval = function (i) {
+        interval = i;
+    };
+
+    harker.stop = function () {
+        running = false;
+        harker.emit('volume_change', -100, threshold);
+        if (harker.speaking) {
+            harker.speaking = false;
+            harker.emit('stopped_speaking');
+        }
+    };
+    harker.speakingHistory = [];
+    for (var i = 0; i < history; i++) {
+        harker.speakingHistory.push(0);
+    }
+
+    // Poll the analyser node to determine if speaking
+    // and emit events if changed
+    var looper = function () {
+        setTimeout(function () {
+
+            //check if stop has been called
+            if (!running) {
+                return;
+            }
+
+            var currentVolume = getMaxVolume(analyser, fftBins);
+
+            harker.emit('volume_change', currentVolume, threshold);
+
+            var history = 0;
+            if (currentVolume > threshold && !harker.speaking) {
+                // trigger quickly, short history
+                for (var i = harker.speakingHistory.length - 3; i < harker.speakingHistory.length; i++) {
+                    history += harker.speakingHistory[i];
+                }
+                if (history >= 2) {
+                    harker.speaking = true;
+                    harker.emit('speaking');
+                }
+            } else if (currentVolume < threshold && harker.speaking) {
+                for (var j = 0; j < harker.speakingHistory.length; j++) {
+                    history += harker.speakingHistory[j];
+                }
+                if (history === 0) {
+                    harker.speaking = false;
+                    harker.emit('stopped_speaking');
+                }
+            }
+            harker.speakingHistory.shift();
+            harker.speakingHistory.push(0 + (currentVolume > threshold));
+
+            looper();
+        }, interval);
+    };
+    looper();
+
+    function getMaxVolume(analyser, fftBins) {
+        var maxVolume = -Infinity;
+        analyser.getFloatFrequencyData(fftBins);
+
+        for (var i = 4, ii = fftBins.length; i < ii; i++) {
+            if (fftBins[i] > maxVolume && fftBins[i] < 0) {
+                maxVolume = fftBins[i];
+            }
+        }
+
+        return maxVolume;
+    }
+
+    return harker;
+}
+
+
+
+
+////////////////////////////////////////////
+// Audio recording segment
+/*
+'use strict'
+
+let log = console.log.bind(console),
+  id = val => document.getElementById(val),
+  ul = id('ul'),
+  gUMbtn = id('gUMbtn'),
+  start = id('start'),
+  stop = id('stop'),
+  stream,
+  recorder,
+  counter=1,
+  chunks,
+  media;
+
+
+//gUMbtn.onclick = e => {
+  let  mediaOptions = {
+        video: {
+          tag: 'video',
+          type: 'video/webm',
+          ext: '.mp4',
+          gUM: {video: true, audio: true}
+        },
+        audio: {
+          tag: 'audio',
+          type: 'audio/ogg',
+          ext: '.ogg',
+          gUM: {audio: true}
+        }
+      };
+
+//  media = mediaOptions.audio;
+  log("after stream");
+  navigator.mediaDevices.getUserMedia(media.gUM).then(_stream => {
+    stream = _stream;
+    log("after stream");
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = e => {
+      chunks.push(e.data);
+      if(recorder.state == 'inactive')  makeLink();
+    };
+    log('got media successfully');
+  }).catch(log);
+//}
+
+start.onclick = e => {
+  start.disabled = true;
+  stop.removeAttribute('disabled');
+  chunks=[];
+  recorder.start();
+}
+*/
+// on recording stop: recorder.stop();
+
+///////////////////////////////////////////
+// to send file to server
+
+var form = document.forms.namedItem("fileinfo");
+
+function upload(blobOrFile) {
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', '<some receiving server that returns a response upon completing upload>');//, true);
+  xhr.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      log("got back: " + this.responseText);
+    }
+  }
+  Data = new FormData()
+  //xhr.setRequestHeader("Content-type", "mixed-content");
+  Data.append('file', blobOrFile, "blob.ogg");//, 'usersound.ogg');
+  xhr.send(Data);
+}
+
+///////////////////////////////////////////
+
+
+var types = ["video/webm",
+             "audio/webm",
+             "video/webm\;codecs=vp8",
+             "video/webm\;codecs=daala",
+             "video/webm\;codecs=h264",
+             "audio/webm\;codecs=opus",
+             "video/mpeg"];
+
+for (var i in types) {
+  console.log( "Is " + types[i] + " supported? " + (MediaRecorder.isTypeSupported(types[i]) ? "Maybe!" : "Nope :("));
+}
+
+
+//////////////////////////////////////////
+'use strict'
+
+let log = console.log.bind(console),
+/*
+  id = val => document.getElementById(val),
+  ul = id('ul'),
+  gUMbtn = id('gUMbtn'),
+  start = id('start'),
+  stop = id('stop'),
+*/
+  stream,
+  recorder,
+  counter=1,
+  chunks,
+  media;
+
+
+
+let  mediaOptions = {
+      video: {
+        tag: 'video',
+        type: 'video/webm',
+        ext: '.mp4',
+        gUM: {video: true, audio: true}
+      },
+      audio: {
+        tag: 'audio',
+        type: 'audio/ogg',
+        ext: '.ogg',
+        gUM: {audio: true},
+        mimeType: 'audio/webm;codecs=opus'
+      }
+    };
+media = mediaOptions.audio;
+//navigator.getUserMedia(media.gUM, onMediaSuccess, function(){log("in this function");});
+navigator.mediaDevices.getUserMedia(media.gUM).then(_stream => {
+    stream = _stream;
+    var options = {};
+    var speechEvents = hark(stream, options);
+
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = e => {
+      chunks.push(e.data);
+      if(recorder.state == 'inactive')  makeLink();
+    };
+    log('got media successfully');
+    speechEvents.on('speaking', function() {
+      console.log('speaking');
+      chunks=[];
+      recorder.start();
+    });
+
+    speechEvents.on('stopped_speaking', function() {
+      console.log('stopped_speaking');
+      recorder.stop();
+    });
+  }).catch(log);
+
+
+  function makeLink(){
+    let blob = new Blob(chunks, {type: media.type })
+    url = URL.createObjectURL(blob);
+    log("url:", url)
+    upload(blob);
+  };
+
+
+
+
+</script>
+
+</head>
+<body>
+<auxio></audio>
+<div id="output">button</div>
+
+</body>
+</html>
